@@ -1,0 +1,59 @@
+name: Online smoke test
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Playwright
+        run: |
+          npm init -y
+          npm install --save-dev playwright
+          npx playwright install --with-deps chromium
+
+      - name: Test deployed Render site
+        env:
+          APP_URL: https://passaporto-dei-libri.onrender.com
+        run: |
+          node - <<'NODE'
+          const { chromium } = require('playwright');
+          const url = process.env.APP_URL;
+          (async()=>{
+            const browser = await chromium.launch({headless:true});
+            const page = await browser.newPage({ viewport:{width:390,height:844}, locale:'it-IT' });
+            const errors=[];
+            page.on('pageerror', e => errors.push('pageerror: '+e.message));
+            page.on('console', m => { if(m.type()==='error') errors.push('console: '+m.text()); });
+            const response = await page.goto(url, {waitUntil:'networkidle', timeout:60000});
+            if(!response || !response.ok()) throw new Error('HTTP failure: '+(response && response.status()));
+            await page.waitForSelector('header.top');
+            await page.waitForSelector('nav.tabs');
+            const title = await page.locator('header.top h1').textContent();
+            if(!title.includes('Passaporto dei Libri')) throw new Error('Header missing');
+            const tabs = await page.locator('nav.tabs button').allTextContents();
+            for(const expected of ['Home','Catalogo','Scansiona','Soci','Viaggi','Gestore']) {
+              if(!tabs.some(x=>x.trim()===expected)) throw new Error('Missing tab: '+expected);
+            }
+            for(const tab of ['Catalogo','Scansiona','Soci','Viaggi','Gestore']) {
+              await page.getByRole('button',{name:tab, exact:true}).click();
+              await page.waitForTimeout(150);
+              if(!(await page.locator('#app').isVisible())) throw new Error('App hidden after '+tab);
+            }
+            if(errors.length) throw new Error(errors.join('\n'));
+            console.log('ONLINE SMOKE TEST PASSED');
+            console.log('Tabs:', tabs.join(' | '));
+            await browser.close();
+          })().catch(async e=>{ console.error(e); process.exit(1); });
+          NODE
