@@ -4,8 +4,10 @@
 - Progetto: Il Passaporto dei Libri
 - Repository GitHub: `giansalvocannizzo-lgtm/passaporto---dei---libri`
 - Branch: `main`
-- Deploy Render: non ancora effettuato
-- Stato attuale: prototipo web/PWA in fase di collaudo e preparazione al deploy
+- Deploy Render: **LIVE**
+- URL Render: `https://passaporto-dei-libri.onrender.com`
+- Versione online: V5
+- Stato: collaudo online in corso
 
 ## Obiettivo
 Creare una piattaforma digitale in cui ogni libro abbia un proprio "passaporto" e possa viaggiare attraverso una comunità di lettori. Il sistema deve registrare identità del libro, proprietario, custode attuale, posizione e storia dei passaggi.
@@ -28,7 +30,7 @@ La logica NON deve imporre una scadenza rigida del prestito. È ammessa una prev
 - Timeline dello storico
 - QR code del libro
 - Scansione QR tramite fotocamera
-- Prevista scansione QR da immagine
+- Scansione QR da immagine prevista
 - Etichetta stampabile del libro
 - Dashboard e statistiche
 - Sezione Viaggi
@@ -37,42 +39,49 @@ La logica NON deve imporre una scadenza rigida del prestito. È ammessa una prev
 - OCR della copertina
 - Ricerca automatica di dati bibliografici
 - Campo descrizione del libro
-- Ricerca prevista tramite Google Books e Open Library
-- Ottimizzazione OCR: caricamento lazy del motore e riutilizzo del worker
-- Controlli di concorrenza per operazioni sul singolo libro
+- Ricerca Google Books e Open Library
+- OCR lazy e riutilizzo del worker
+- Estrazione ISBN dall'OCR
+- Fallback `localStorage` per ambienti statici privi di `window.storage`
+- Controlli di concorrenza lato browser per il singolo libro
 
-## Test già eseguiti
+## Test eseguiti
 - Controllo sintattico JavaScript: OK
+- Controlli statici HTML/DOM: OK
+- Verifica apertura reale su smartphone da Render: OK
+- Renderizzazione V5 su Render: OK
 - Test logico del flusso gestore: OK
-- Test di più libri: simulazione di caricamento massivo
-- Test di 5 utenti: simulazione di prestiti/restituzioni
-- Test di contesa sullo stesso libro: logica progettata per consentire un solo prestito quando il lock è disponibile
-- Test su libri differenti: operazioni parallele simulate
-- Controllo integrità archivio: previsto e integrato
+- Test simulato di caricamento massivo: OK
+- Test simulato di 5 utenti: OK
+- Test simulato di contesa sullo stesso libro: OK quando il lock browser è disponibile
+- Test simulato di operazioni parallele su libri differenti: OK
+- Controllo integrità archivio: integrato
+- Test automatico online Playwright: configurato in `.github/workflows/online-smoke-test.yml`; verifica apertura Render, header, tab principali e assenza di errori console/pageerror
+
+## Test ancora da completare
+- Esecuzione confermata del workflow Playwright sul commit online
+- Inserimento di un libro reale dal Gestore
+- OCR con fotografia reale di copertina su smartphone
+- Ricerca bibliografica reale e generazione descrizione
+- Generazione/lettura QR reale
+- Prestito e restituzione reali
+- Caricamento massivo reale dal Gestore
+- Test con 5 dispositivi fisicamente separati
+- Verifica della persistenza e della condivisione dei dati tra dispositivi
 
 ## Limite tecnico noto
-Il lock lato browser (`navigator.locks`) non garantisce una transazione atomica tra dispositivi fisicamente differenti. Per il vero ambiente multiutente il progetto dovrà passare a backend + database con controllo atomico del prestito.
+Il lock lato browser (`navigator.locks`) non garantisce una transazione atomica tra dispositivi fisicamente differenti. Inoltre il fallback `localStorage` è locale al browser. Per un archivio realmente condiviso tra più smartphone servirà backend + database con transazione atomica del prestito.
 
 ## OCR
 Problema rilevato: prima lettura OCR relativamente lenta.
-Soluzioni già introdotte:
+Soluzioni introdotte:
 - caricamento del motore OCR solo quando richiesto;
 - riutilizzo del worker;
-- ridimensionamento/preparazione dell'immagine;
+- preparazione/ridimensionamento dell'immagine;
+- estrazione ISBN;
 - verifica manuale dei dati prima del salvataggio.
 
-Da verificare con fotografie reali di copertine su smartphone.
-
-## Prossimo obiettivo immediato
-1. Caricare la versione corrente come `index.html` nel repository GitHub.
-2. Aggiungere questo `PROJECT_MEMORY.md`.
-3. Verificare il repository.
-4. Collegare il repository a Render come Static Site.
-5. Effettuare il primo test reale online.
-6. Testare il caricamento di molti libri da parte del gestore.
-7. Testare 5 utenti reali collegati contemporaneamente da dispositivi diversi.
-8. Testare QR, OCR, persistenza, prestiti, restituzioni, posizione e archivio.
-9. Solo dopo il test reale decidere il passaggio a backend/database.
+Da verificare con fotografie reali di copertine.
 
 ## Regola di sviluppo
 Non riscrivere il progetto da zero senza motivo. Conservare l'interfaccia e il linguaggio visivo "passaporto/timbri/carta" e modificare il codice incrementando le versioni.
@@ -89,4 +98,5 @@ Ogni nuova versione deve:
 - V2: catalogo, soci, QR e prestiti
 - V3: passaporto, statistiche, OCR, ricerca bibliografica, descrizione, backup e controllo archivio
 - V4: miglioramenti OCR e gestione della concorrenza lato browser
-- Prossima fase: deploy reale su Render e test multi-dispositivo
+- V5: fallback storage, ISBN/OCR migliorato, ricerca bibliografica, QR deep-link, self-test e deploy Render
+- Prossima fase: collaudo reale multi-dispositivo e, se necessario, backend/database condiviso
