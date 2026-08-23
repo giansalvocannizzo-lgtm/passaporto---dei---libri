@@ -100,3 +100,8 @@ Ogni nuova versione deve:
 - V4: miglioramenti OCR e gestione della concorrenza lato browser
 - V5: fallback storage, ISBN/OCR migliorato, ricerca bibliografica, QR deep-link, self-test e deploy Render
 - Prossima fase: collaudo reale multi-dispositivo e, se necessario, backend/database condiviso
+
+## Test trigger
+- Commit di trigger: aggiornamento memoria per avviare il workflow online smoke test
+- Data: 2026-08-23
+- Obiettivo: verificare l'esecuzione reale di GitHub Actions contro il sito Render LIVE
