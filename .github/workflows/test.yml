@@ -1,0 +1,55 @@
+name: V5 tests
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Extract JavaScript
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          html = Path('index.html').read_text(encoding='utf-8')
+          scripts = re.findall(r'<script(?:\\s[^>]*)?>(.*?)</script>', html, re.S | re.I)
+          if not scripts:
+              raise SystemExit('No inline JavaScript found')
+          Path('/tmp/app.js').write_text('\n'.join(scripts), encoding='utf-8')
+          print(f'Found {len(scripts)} script blocks')
+          PY
+      - name: JavaScript syntax check
+        run: node --check /tmp/app.js
+      - name: Structural checks
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          html = Path('index.html').read_text(encoding='utf-8')
+          required = [
+              'Il Passaporto dei Libri',
+              'data-tab="home"',
+              'data-tab="catalogo"',
+              'data-tab="scansiona"',
+              'data-tab="soci"',
+              'data-tab="viaggi"',
+              'data-tab="aggiungi"',
+              'qrcodejs',
+              'jsQR',
+              'BOOK_INDEX_KEY',
+              'MEMBERS_KEY',
+              'GESTORE_PIN_KEY'
+          ]
+          missing = [x for x in required if x not in html]
+          if missing:
+              raise SystemExit('Missing: ' + ', '.join(missing))
+          if html.count('<html') != 1 or html.count('</html>') != 1:
+              raise SystemExit('HTML root structure invalid')
+          print('Structural checks: OK')
+          PY
