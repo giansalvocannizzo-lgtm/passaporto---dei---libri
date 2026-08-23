@@ -3,18 +3,19 @@
 ## Stato del progetto
 - Progetto: Il Passaporto dei Libri
 - Repository GitHub: `giansalvocannizzo-lgtm/passaporto---dei---libri`
-- Branch: `main`
-- Deploy Render: **LIVE**
-- URL Render: `https://passaporto-dei-libri.onrender.com`
-- Versione online: V5
-- Stato: collaudo online in corso
+- Branch stabile: `main`
+- Branch di sviluppo corrente: `v6-backend-shared-archive`
+- Deploy Render V5: **LIVE**
+- URL Render V5: `https://passaporto-dei-libri.onrender.com`
+- Versione online stabile: V5
+- V6: in sviluppo, non ancora pubblicata su main
 
 ## Obiettivo
 Creare una piattaforma digitale in cui ogni libro abbia un proprio "passaporto" e possa viaggiare attraverso una comunità di lettori. Il sistema deve registrare identità del libro, proprietario, custode attuale, posizione e storia dei passaggi.
 
 La logica NON deve imporre una scadenza rigida del prestito. È ammessa una previsione orientativa di restituzione.
 
-## Funzionalità sviluppate
+## Funzionalità V5 sviluppate
 - Catalogo libri
 - Ricerca libri
 - Soci e identificazione del socio
@@ -45,43 +46,63 @@ La logica NON deve imporre una scadenza rigida del prestito. È ammessa una prev
 - Fallback `localStorage` per ambienti statici privi di `window.storage`
 - Controlli di concorrenza lato browser per il singolo libro
 
-## Test eseguiti
-- Controllo sintattico JavaScript: OK
-- Controlli statici HTML/DOM: OK
-- Verifica apertura reale su smartphone da Render: OK
-- Renderizzazione V5 su Render: OK
-- Test logico del flusso gestore: OK
-- Test simulato di caricamento massivo: OK
-- Test simulato di 5 utenti: OK
-- Test simulato di contesa sullo stesso libro: OK quando il lock browser è disponibile
-- Test simulato di operazioni parallele su libri differenti: OK
-- Controllo integrità archivio: integrato
-- Test automatico online Playwright: configurato in `.github/workflows/online-smoke-test.yml`; verifica apertura Render, header, tab principali e assenza di errori console/pageerror
+## Diagnosi architetturale V5
+La V5 è una SPA statica. In assenza di `window.storage`, l'archivio ricade su `localStorage`, quindi è locale al browser/dispositivo. `navigator.locks` non costituisce una transazione atomica tra dispositivi differenti.
 
-## Test ancora da completare
-- Esecuzione confermata del workflow Playwright sul commit online
-- Inserimento di un libro reale dal Gestore
-- OCR con fotografia reale di copertina su smartphone
-- Ricerca bibliografica reale e generazione descrizione
-- Generazione/lettura QR reale
-- Prestito e restituzione reali
-- Caricamento massivo reale dal Gestore
-- Test con 5 dispositivi fisicamente separati
-- Verifica della persistenza e della condivisione dei dati tra dispositivi
+Conseguenze:
+- dispositivi diversi possono avere archivi differenti;
+- prestiti/restituzioni non sono centralizzati;
+- QR deep-link non garantisce il recupero del libro su un altro dispositivo;
+- PIN gestore e dati locali non costituiscono autenticazione server-side;
+- export JSON è locale al browser corrente.
 
-## Limite tecnico noto
-Il lock lato browser (`navigator.locks`) non garantisce una transazione atomica tra dispositivi fisicamente differenti. Inoltre il fallback `localStorage` è locale al browser. Per un archivio realmente condiviso tra più smartphone servirà backend + database con transazione atomica del prestito.
+## V6 — fase backend condiviso avviata
+Branch: `v6-backend-shared-archive`
 
-## OCR
-Problema rilevato: prima lettura OCR relativamente lenta.
-Soluzioni introdotte:
-- caricamento del motore OCR solo quando richiesto;
-- riutilizzo del worker;
-- preparazione/ridimensionamento dell'immagine;
-- estrazione ISBN;
-- verifica manuale dei dati prima del salvataggio.
+Implementato nella prima fase:
+- `server.js`: API Node.js per archivio condiviso PostgreSQL;
+- `package.json`: runtime Node 20 e dipendenza PostgreSQL `pg`;
+- `.env.example`: variabili `DATABASE_URL`, `AUTH_SECRET`, `ADMIN_PASSWORD`, `DB_SSL`;
+- `render-v6.yaml`: blueprint Render per un servizio web API separato;
+- `backend-test.mjs`: test strutturali del backend;
+- `.github/workflows/v6-backend-test.yml`: CI per sintassi e test backend;
+- schema PostgreSQL automatico per `members`, `books`, `book_events`;
+- autenticazione gestore e socio tramite token HMAC;
+- prestito transazionale con condizione atomica `status='disponibile'`;
+- restituzione transazionale vincolata al socio che possiede il libro;
+- aggiornamento posizione/traccia vincolato al custode;
+- endpoint `/api/health`;
+- ricerca libri via API e recupero eventi.
 
-Da verificare con fotografie reali di copertine.
+## PR V6
+- Pull Request: #1
+- Titolo: `V6: backend condiviso e archivio multiutente`
+- Stato: **DRAFT**, non mergiata
+- Base: `main`
+- Head: `v6-backend-shared-archive`
+- Obiettivo della PR: verificare il backend prima di collegarlo all'interfaccia V5.
+
+## Test V6 eseguiti
+- `node --check server.js`: OK
+- test strutturale backend locale: OK
+- verifica presenza delle route principali: OK
+- verifica prestito atomico lato database: OK a livello strutturale
+- verifica guardia restituzione per `holder_id`: OK a livello strutturale
+- workflow GitHub Actions V6 configurato
+
+## V6 ancora da completare
+1. Collegare `index.html` alle API V6 senza rompere l'interfaccia V5.
+2. Implementare login socio/gestore nell'interfaccia.
+3. Implementare migrazione controllata dei dati V5/localStorage verso PostgreSQL.
+4. Definire la strategia definitiva per immagini/copertine: non usare base64 nel database per archivi grandi.
+5. Configurare `DATABASE_URL`, `AUTH_SECRET` e `ADMIN_PASSWORD` su Render.
+6. Creare il servizio API su Render senza modificare/distruggere il servizio V5 finché V6 non è verificata.
+7. Testare API e UI con Playwright.
+8. Simulare almeno 5 utenti contemporanei con contesa sullo stesso libro.
+9. Testare prestiti paralleli su libri differenti.
+10. Testare QR cross-device.
+11. Testare OCR reale e ricerca bibliografica reale.
+12. Solo dopo i test, valutare il merge della PR V6 in `main`.
 
 ## Regola di sviluppo
 Non riscrivere il progetto da zero senza motivo. Conservare l'interfaccia e il linguaggio visivo "passaporto/timbri/carta" e modificare il codice incrementando le versioni.
@@ -99,9 +120,7 @@ Ogni nuova versione deve:
 - V3: passaporto, statistiche, OCR, ricerca bibliografica, descrizione, backup e controllo archivio
 - V4: miglioramenti OCR e gestione della concorrenza lato browser
 - V5: fallback storage, ISBN/OCR migliorato, ricerca bibliografica, QR deep-link, self-test e deploy Render
-- Prossima fase: collaudo reale multi-dispositivo e, se necessario, backend/database condiviso
+- V6: backend condiviso PostgreSQL, API, autenticazione e prestiti transazionali — **in sviluppo**
 
-## Test trigger
-- Commit di trigger: aggiornamento memoria per avviare il workflow online smoke test
-- Data: 2026-08-23
-- Obiettivo: verificare l'esecuzione reale di GitHub Actions contro il sito Render LIVE
+## Vincolo importante
+Non considerare la previsione di restituzione come una scadenza obbligatoria del prestito. Il libro deve poter continuare a viaggiare oltre la data prevista.
