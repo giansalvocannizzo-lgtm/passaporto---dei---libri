@@ -1,0 +1,98 @@
+name: Functional multi-user test
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  functional:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Playwright
+        run: |
+          npm init -y
+          npm install --save-dev playwright
+          npx playwright install --with-deps chromium
+
+      - name: Functional and five-user test
+        env:
+          APP_URL: https://passaporto-dei-libri.onrender.com
+        run: |
+          node - <<'NODE'
+          const { chromium } = require('playwright');
+          const url = process.env.APP_URL;
+          (async()=>{
+            const browser = await chromium.launch({headless:true});
+            const contexts = await Promise.all(Array.from({length:5},()=>browser.newContext({viewport:{width:390,height:844},locale:'it-IT'})));
+            const pages = await Promise.all(contexts.map(c=>c.newPage()));
+            const errors=[];
+            for(const [i,page] of pages.entries()){
+              page.on('pageerror', e=>errors.push(`user${i+1} pageerror: ${e.message}`));
+              page.on('console', m=>{if(m.type()==='error') errors.push(`user${i+1} console: ${m.text()}`)});
+            }
+            await Promise.all(pages.map(p=>p.goto(url,{waitUntil:'networkidle',timeout:60000})));
+            for(const [i,page] of pages.entries()){
+              await page.waitForSelector('header.top');
+              await page.waitForSelector('nav.tabs');
+              const title=await page.locator('header.top h1').textContent();
+              if(!title.includes('Passaporto dei Libri')) throw new Error(`user${i+1}: header missing`);
+              const tabs=await page.locator('nav.tabs button').allTextContents();
+              for(const expected of ['Home','Catalogo','Scansiona','Soci','Viaggi','Gestore']){
+                if(!tabs.some(x=>x.trim()===expected)) throw new Error(`user${i+1}: missing tab ${expected}`);
+                await page.getByRole('button',{name:expected,exact:true}).click();
+                await page.waitForTimeout(100);
+                if(!(await page.locator('#app').isVisible())) throw new Error(`user${i+1}: app hidden on ${expected}`);
+              }
+            }
+
+            // Verify the real app storage adapter can write/read a book-shaped record.
+            const testBook={id:'ci_test_book_'+Date.now(),code:'PB-CI-000001',title:'CI test book',author:'Automated Test',status:'disponibile',timeline:[]};
+            const roundTrip=await pages[0].evaluate(async b=>{
+              if(typeof saveBook!=='function'||typeof loadBook!=='function') throw new Error('book storage functions unavailable');
+              await saveBook(b);
+              const loaded=await loadBook(b.id);
+              return {mode:typeof storageMode==='function'?storageMode():'unknown',loaded};
+            },testBook);
+            if(!roundTrip.loaded || roundTrip.loaded.title!=='CI test book') throw new Error('book save/load round-trip failed');
+            await pages[0].evaluate(async id=>{try{localStorage.removeItem('passaporto-libri:book:'+id)}catch(e){}},testBook.id);
+
+            // Verify camera and QR dependencies are available in the deployed page.
+            const capabilities=await pages[0].evaluate(()=>({
+              secure:window.isSecureContext,
+              camera:!!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia),
+              qrGenerator:typeof QRCode==='function',
+              qrScanner:typeof jsQR==='function'
+            }));
+            if(!capabilities.secure) throw new Error('site is not running in a secure context');
+            if(!capabilities.camera) throw new Error('camera API unavailable');
+            if(!capabilities.qrGenerator||!capabilities.qrScanner) throw new Error('QR libraries unavailable');
+
+            // Five separate browser contexts model five separate devices.
+            // On the current static Render deployment each has its own localStorage.
+            const keys=await Promise.all(pages.map((p,i)=>p.evaluate(async i=>{
+              const k='ci_user_marker_'+i;
+              localStorage.setItem(k,'user-'+i);
+              return k;
+            },i)));
+            const visibility=await pages[0].evaluate(keys=>keys.map(k=>localStorage.getItem(k)),keys);
+            if(visibility.some((v,i)=>i===0?v!=='user-0':v!==null)) throw new Error('unexpected cross-device localStorage sharing');
+
+            if(errors.length) throw new Error(errors.join('\n'));
+            console.log('FUNCTIONAL TEST PASSED');
+            console.log('Five contexts opened and navigated successfully.');
+            console.log('Storage mode:',roundTrip.mode);
+            console.log('Camera API:',capabilities.camera,'QR generator:',capabilities.qrGenerator,'QR scanner:',capabilities.qrScanner);
+            console.log('Five-device isolation check: PASSED');
+            await Promise.all(contexts.map(c=>c.close()));
+            await browser.close();
+          })().catch(e=>{console.error(e);process.exit(1)});
+          NODE
