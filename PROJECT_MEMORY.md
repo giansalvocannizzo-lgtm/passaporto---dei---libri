@@ -8,7 +8,7 @@
 - Deploy Render V5: **LIVE**
 - URL Render V5: `https://passaporto-dei-libri.onrender.com`
 - Versione online stabile: V5
-- V6: in sviluppo, non ancora pubblicata su main
+- V6: backend verificato sul branch di sviluppo, non pubblicato su `main`
 
 ## Obiettivo
 Creare una piattaforma digitale in cui ogni libro abbia un proprio "passaporto" e possa viaggiare attraverso una comunità di lettori. Il sistema deve registrare identità del libro, proprietario, custode attuale, posizione e storia dei passaggi.
@@ -56,23 +56,27 @@ Conseguenze:
 - PIN gestore e dati locali non costituiscono autenticazione server-side;
 - export JSON è locale al browser corrente.
 
-## V6 — fase backend condiviso avviata
+## V6 — backend condiviso verificato
 Branch: `v6-backend-shared-archive`
 
-Implementato nella prima fase:
+Implementato e verificato:
 - `server.js`: API Node.js per archivio condiviso PostgreSQL;
-- `package.json`: runtime Node 20 e dipendenza PostgreSQL `pg`;
-- `.env.example`: variabili `DATABASE_URL`, `AUTH_SECRET`, `ADMIN_PASSWORD`, `DB_SSL`;
-- `render-v6.yaml`: blueprint Render per un servizio web API separato;
-- `backend-test.mjs`: test strutturali del backend;
-- `.github/workflows/v6-backend-test.yml`: CI per sintassi e test backend;
+- `package.json`: dipendenza PostgreSQL `pg` e script `check` / `test:backend`;
+- `.env.example`: `DATABASE_URL`, `AUTH_SECRET`, `ADMIN_PASSWORD`, `DB_SSL`;
+- `render-v6.yaml`: servizio Render API separato dalla V5;
+- `backend-test.mjs`: test di integrazione reali HTTP/database, sicurezza e concorrenza;
+- `.github/workflows/v6-backend-test.yml`: PostgreSQL 16 service + CI reale;
 - schema PostgreSQL automatico per `members`, `books`, `book_events`;
-- autenticazione gestore e socio tramite token HMAC;
-- prestito transazionale con condizione atomica `status='disponibile'`;
-- restituzione transazionale vincolata al socio che possiede il libro;
+- autenticazione admin e socio con token HMAC e scadenza;
+- prestito transazionale atomico;
+- restituzione transazionale vincolata al custode;
 - aggiornamento posizione/traccia vincolato al custode;
-- endpoint `/api/health`;
-- ricerca libri via API e recupero eventi.
+- eventi del libro;
+- gestione esplicita dell'assenza di `DATABASE_URL`;
+- CORS API coerente con una UI separata, con `CORS_ORIGIN` opzionale e `*` come default;
+- JSON malformato restituito come HTTP 400;
+- token malformati/scaduti rifiutati come HTTP 401;
+- API testate per non restituire `pin_hash`, password o segreti.
 
 ## PR V6
 - Pull Request: #1
@@ -80,29 +84,73 @@ Implementato nella prima fase:
 - Stato: **DRAFT**, non mergiata
 - Base: `main`
 - Head: `v6-backend-shared-archive`
-- Obiettivo della PR: verificare il backend prima di collegarlo all'interfaccia V5.
+- Obiettivo: verificare il backend prima di collegarlo all'interfaccia V5.
 
-## Test V6 eseguiti
-- `node --check server.js`: OK
-- test strutturale backend locale: OK
-- verifica presenza delle route principali: OK
-- verifica prestito atomico lato database: OK a livello strutturale
-- verifica guardia restituzione per `holder_id`: OK a livello strutturale
-- workflow GitHub Actions V6 configurato
+## Test V6 — esito reale
+Workflow GitHub Actions: `V6 backend test`, run **#12**, concluso **SUCCESS**.
 
-## V6 ancora da completare
-1. Collegare `index.html` alle API V6 senza rompere l'interfaccia V5.
-2. Implementare login socio/gestore nell'interfaccia.
-3. Implementare migrazione controllata dei dati V5/localStorage verso PostgreSQL.
-4. Definire la strategia definitiva per immagini/copertine: non usare base64 nel database per archivi grandi.
-5. Configurare `DATABASE_URL`, `AUTH_SECRET` e `ADMIN_PASSWORD` su Render.
-6. Creare il servizio API su Render senza modificare/distruggere il servizio V5 finché V6 non è verificata.
-7. Testare API e UI con Playwright.
-8. Simulare almeno 5 utenti contemporanei con contesa sullo stesso libro.
-9. Testare prestiti paralleli su libri differenti.
-10. Testare QR cross-device.
-11. Testare OCR reale e ricerca bibliografica reale.
-12. Solo dopo i test, valutare il merge della PR V6 in `main`.
+Eseguiti realmente in GitHub Actions con PostgreSQL 16 isolato di test:
+- `npm install`: **PASS** — 14 pacchetti installati, 0 vulnerabilità riportate da npm;
+- `npm run check`: **PASS** — `node --check server.js`;
+- `npm run test:backend`: **PASS**.
+
+Il test backend reale ha verificato via HTTP e PostgreSQL:
+- `/api/health`;
+- autenticazione admin;
+- autenticazione socio per due soci;
+- creazione socio;
+- creazione libro;
+- lettura libro;
+- ricerca libri;
+- prestito;
+- restituzione;
+- aggiornamento posizione;
+- aggiornamento traccia;
+- eventi del libro;
+- autorizzazioni admin/member;
+- token HMAC malformato e token scaduto;
+- JSON malformato;
+- assenza di `pin_hash`, password e segreti nelle risposte;
+- assenza di `DATABASE_URL` con comportamento HTTP 503 per gli endpoint che richiedono il database;
+- due soci che tentano contemporaneamente lo stesso libro: esattamente **1 HTTP 200 + 1 HTTP 409**, un solo `holder_id`, un solo evento `prestito`;
+- restituzione da parte di un socio diverso dal custode: **HTTP 409**;
+- due soci che prendono contemporaneamente due libri differenti: **entrambi HTTP 200**.
+
+Dopo la verifica funzionale è stato rimosso dal workflow un input obsoleto di `setup-node` che generava un warning. La successiva run **#14** è stata avviata sul branch e al momento dell'ultimo controllo risultava ancora **queued**; la run #12 resta la verifica completa riuscita delle modifiche funzionali.
+
+## Sicurezza V6 verificata
+- HMAC SHA-256 con confronto constant-time;
+- scadenza token controllata;
+- ruoli admin/member controllati sulle operazioni protette;
+- query PostgreSQL con parametri;
+- whitelist per i nomi colonna dinamici del PATCH libro;
+- nessuna password/PIN restituita dalle API;
+- nessun segreto hardcoded nel codice applicativo;
+- input JSON malformato gestito con HTTP 400;
+- CORS applicato anche alle risposte API, non soltanto a OPTIONS.
+
+## Render V6
+`render-v6.yaml` definisce un servizio web separato denominato `passaporto-dei-libri-api-v6`, con health check `/api/health`, senza modificare il servizio V5.
+
+Variabili necessarie su Render:
+- `DATABASE_URL` — obbligatoria: URL PostgreSQL del database V6;
+- `AUTH_SECRET` — obbligatoria: segreto HMAC lungo e casuale;
+- `ADMIN_PASSWORD` — obbligatoria: password iniziale dell'amministratore;
+- `DB_SSL` — configurazione SSL PostgreSQL, attualmente `true` nel blueprint Render.
+
+`CORS_ORIGIN` è opzionale: se non impostata, l'API usa `*` perché l'autenticazione avviene tramite Bearer token e non tramite cookie.
+
+## Cosa manca prima di collegare V5
+1. Deploy reale del servizio API V6 su Render, senza modificare/distruggere il servizio V5.
+2. Configurazione sicura delle quattro variabili Render sopra indicate.
+3. Smoke test online del servizio V6 su Render, separato dai test CI.
+4. Test E2E browser/Playwright.
+5. Eventuale test di contesa con almeno 5 utenti, se richiesto come stress test ulteriore.
+6. Strategia controllata di migrazione dei dati V5/localStorage verso PostgreSQL.
+7. Strategia definitiva per immagini/copertine: non usare base64 nel database per archivi grandi.
+8. Test QR cross-device.
+9. Test OCR reale e ricerca bibliografica reale.
+10. Solo dopo questi passaggi, valutare il collegamento di `index.html` e successivamente il merge della PR V6 in `main`.
 
 ## Regola di sviluppo
 Non riscrivere il progetto da zero senza motivo. Conservare l'interfaccia e il linguaggio visivo "passaporto/timbri/carta" e modificare il codice incrementando le versioni.
@@ -120,7 +168,7 @@ Ogni nuova versione deve:
 - V3: passaporto, statistiche, OCR, ricerca bibliografica, descrizione, backup e controllo archivio
 - V4: miglioramenti OCR e gestione della concorrenza lato browser
 - V5: fallback storage, ISBN/OCR migliorato, ricerca bibliografica, QR deep-link, self-test e deploy Render
-- V6: backend condiviso PostgreSQL, API, autenticazione e prestiti transazionali — **in sviluppo**
+- V6: backend condiviso PostgreSQL, API, autenticazione e prestiti transazionali — **backend verificato, integrazione UI non ancora iniziata**
 
 ## Vincolo importante
 Non considerare la previsione di restituzione come una scadenza obbligatoria del prestito. Il libro deve poter continuare a viaggiare oltre la data prevista.
