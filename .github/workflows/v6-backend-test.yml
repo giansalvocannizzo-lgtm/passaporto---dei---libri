@@ -13,6 +13,26 @@ on:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: v6test
+          POSTGRES_PASSWORD: v6test
+          POSTGRES_DB: v6test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U v6test -d v6test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      DATABASE_URL: postgresql://v6test:v6test@localhost:5432/v6test
+      AUTH_SECRET: ci-test-auth-secret
+      ADMIN_PASSWORD: ci-test-admin-password
+      DB_SSL: "false"
+      CORS_ORIGIN: "*"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,5 +45,5 @@ jobs:
         run: npm install
       - name: Syntax check
         run: npm run check
-      - name: Structural backend test
+      - name: Backend integration and concurrency test
         run: npm run test:backend
